@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook02
+  namespace: infra
+  labels:
+    app: webhook02
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook02
+  template:
+    metadata:
+      labels:
+        app: webhook02
+    spec:
+      containers:
+        - env:
+            - name: LABEL_NAME
+              value: test2
+            - name: GOREPLAY
+              value: gor:v1
+          name: server
+          image: webhook02:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8443
+              name: webhook02-api
+          volumeMounts:
+            - name: webhook02-volume-secret
+              mountPath: /run/secrets/tls
+              readOnly: true
+      volumes:
+        - name: webhook02-volume-secret
+          secret:
+            secretName: webhook02-server-tls-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook02
+  namespace: infra
+spec:
+  selector:
+    app: webhook02
+  ports:
+    - port: 443
+      targetPort: webhook02-api
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: webhook02
+webhooks:
+  - name: webhook02.infra.svc
+    namespaceSelector:
+      matchExpressions:
+        - key: is_webhook_remove
+          operator: DoesNotExist
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    timeoutSeconds: 15
+    failurePolicy: Ignore
+    clientConfig:
+      service:
+        name: webhook02
+        namespace: infra
+        path: "/api"
+      caBundle: ${CA_PEM_B64}
+    rules:
+      - operations: [ "CREATE" ]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
